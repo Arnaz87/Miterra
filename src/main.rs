@@ -5,15 +5,24 @@ extern crate glutin;
 extern crate cgmath;
 
 mod camera;
-mod chunk;
+//mod chunk;
+mod voxel_source;
+mod mesher;
+mod surfnet;
+mod blocky;
 
 use camera::Camera;
-use chunk::Chunk;
+//use chunk::Chunk;
+
+use voxel_source::SphereSource;
+use surfnet::SurfNet;
+use blocky::Blocky;
+use mesher::Mesher;
 
 use gfx::traits::FactoryExt;
 use gfx::Device;
 use gfx_window_glutin as gfx_glutin;
-use cgmath::{Matrix4, Deg, Vector3, Point3, InnerSpace};
+use cgmath::{Matrix4, Vector3, InnerSpace};
 
 // Esto debería ser Srgba8, todo el mundo usa eso, pero glutin da un error.
 pub type ColorFormat = gfx::format::Rgba8;
@@ -52,7 +61,7 @@ impl Transform {
 
 const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
-const U: f32 = 0.57735; // 1/sqrt(3)
+/*const U: f32 = 0.57735; // 1/sqrt(3)
 
 const VERTICES: &[Vertex] = &[
     Vertex { pos: [-0.5, -0.5, -0.5], color: [0.1, 0.1, 0.1], normal: [-U,-U,-U] },
@@ -72,7 +81,7 @@ const INDICES: &[u16] = &[
     2, 3, 6,  3, 6, 7,
     0, 2, 4,  2, 4, 6,
     1, 3, 5,  3, 5, 7,
-];
+];*/
 
 pub fn main() {
     let mut events_loop = glutin::EventsLoop::new();
@@ -100,39 +109,15 @@ pub fn main() {
         factory.create_pipeline_state(&set, prim, raster, init).unwrap()
     };
 
-    /*let pso = factory.create_pipeline_simple(
-        include_bytes!("../assets/shader_150.glslv"),
-        include_bytes!("../assets/shader_150.glslf"),
-        pipe::new()
-    ).unwrap();*/
+    let sphere = SphereSource{x: 32, y: -32, z: 32, r: 64};
+    let mut mesher: Option<Box<Mesher>> = Some(Box::new(Blocky{size: 64}));
 
-    let mut chunk = Chunk::new();
-    chunk.create_mesh();
-
-    let iterator = chunk.vertices.iter().zip(chunk.normals.iter());
-    let vertices: Vec<Vertex> = iterator.map( |(p, n)|
-        Vertex {
-            pos: *p.as_ref(),
-            color: *(p/64.0).as_ref(),
-            normal: *n.as_ref()
-        }
-    ).collect();
-    let indices: &[u16] = chunk.indices.as_ref();
-
-
-    /*for v in vertices.iter() {
-        println!("{:?} - {:?}", v.pos, v.normal);
-    }
-    println!("{:?}", indices);
-    println!("{} faces, {} vertices", indices.len()/3, vertices.len());*/
-
-    let (vertex_buffer, slice) =
-        factory.create_vertex_buffer_with_slice(&vertices, indices);
+    let (vertex_buffer, mut slice) = factory.create_vertex_buffer_with_slice(&[], ());
     let transform_buffer = factory.create_constant_buffer(1);
     let light_buffer = factory.create_constant_buffer(1);
 
-    let mut rot = Matrix4::from_angle_x(Deg(0.0));
-    let pos = Matrix4::from_translation(Vector3{x: 0.0, y: 0.0, z: 0.0});
+    //let mut rot = Matrix4::from_angle_x(Deg(0.0));
+    //let pos = Matrix4::from_translation(Vector3{x: 0.0, y: 0.0, z: 0.0});
 
     // Rango aceptable de FOV: 45° - 120°
     // Mejor FOV: 100°
@@ -151,7 +136,7 @@ pub fn main() {
     };
 
     {
-        let dir = Vector3::new(-1.0, 1.0, 1.0).normalize();
+        let dir = Vector3::new(-0.6, 1.0, 0.8).normalize();
         let light = Light{ dir: *dir.as_ref() };
         encoder.update_buffer(&data.light, &[light], 0).unwrap();
     }
@@ -173,6 +158,9 @@ pub fn main() {
             Err(_) => println!("Could not set mouse position.")
         };
     }
+
+    println!("Press 1 to generate a blocky surface.");
+    println!("Press 2 to generate a surface net.");
 
     while running {
         use glutin::GlContext;
@@ -254,12 +242,40 @@ pub fn main() {
                             Key::S => cam.back = pressed,
                             Key::D => cam.right = pressed,
                             _ => ()
-                        } };
+                        } }
+
+                        if active && pressed { match key {
+                            Key::Key1 => mesher = Some(Box::new(Blocky{size: 64})),
+                            Key::Key2 => mesher = Some(Box::new(SurfNet{size: 64, smooth: 3})),
+                            _ => {}
+                        } }
                     }
                     _ => ()
                 }
             }, _ => ()
         } });
+
+        match std::mem::replace(&mut mesher, None) {
+            Some(mut mesher) => {
+                let (vs, ns, is) = mesher.mesh(&sphere);
+                let indices: &[u16] = is.as_ref();
+
+                let vertices: Vec<Vertex> = vs.iter().zip(ns.iter()).map( |(p, n)|
+                    Vertex {
+                        pos: *p.as_ref(),
+                        color: [1.0, 1.0, 1.0],
+                        normal: *n.as_ref()
+                    }
+                ).collect();
+
+                let (vbuf, sl) = factory.create_vertex_buffer_with_slice(
+                    &vertices, indices
+                );
+
+                data.vbuf = vbuf;
+                slice = sl;
+            }, _ => {}
+        }
 
         cam.update();
 

@@ -1,61 +1,45 @@
 
-use cgmath::{Vector3, InnerSpace};
+use mesher::{Mesher, calculate_normals};
+use voxel_source::VoxelSource;
+use cgmath::Vector3;
 
-pub struct Chunk {
-    pub data: Vec<bool>,
+pub struct SurfNet {
+    pub size: u16,
+    pub smooth: u16,
+}
+
+pub struct Builder<'a> {
+    size: i32,
+    smooth: u16,
+    source: &'a VoxelSource,
     positions: Vec<(i32, i32, i32)>,
-    pub previous: Vec<Vector3<f32>>,
-    pub vertices: Vec<Vector3<f32>>,
-    pub normals: Vec<Vector3<f32>>,
-    pub indices: Vec<u16>,
+    previous: Vec<Vector3<f32>>,
+    vertices: Vec<Vector3<f32>>,
+    normals: Vec<Vector3<f32>>,
+    indices: Vec<u16>,
     indexmap: Vec<i32>,
 }
 
-
-const SZ: usize = 64;
-const ISZ: i32 = 64;
-
-impl Chunk {
-    pub fn new () -> Self {
-        let mut chunk = Chunk {
-            data: vec![false; SZ*SZ*SZ],
+impl<'a> Builder<'a> {
+    pub fn new (params: &SurfNet, source: &'a VoxelSource) -> Self {
+        let sz = params.size as usize;
+        Builder {
+            size: params.size as i32,
+            smooth: params.smooth,
+            source: source,
             positions: vec![],
             previous: vec![],
             vertices: vec![],
             normals: vec![],
             indices: vec![],
-            indexmap: vec![-1; SZ*SZ*SZ],
-        };
-        for ix in 0..SZ {
-            for iy in 0..SZ {
-                for iz in 0..SZ {
-                    let sz = SZ as f32;
-                    let x = ix as f32/sz-0.5;
-                    let y = iy as f32/sz;
-                    let z = iz as f32/sz-0.5;
-                    let d = x*x + y*y + z*z;
-                    chunk.set(ix, iy, iz, d < 0.5);
-                }
-            }
-        }
-        chunk
-    }
-
-    pub fn set(&mut self, x: usize, y: usize, z: usize, b: bool) {
-        self.data[x + y*SZ + z*SZ*SZ] = b;
-    }
-
-    pub fn get(&self, x: usize, y: usize, z: usize) -> bool {
-        if x >= SZ || y >= SZ || z >= SZ {
-            false
-        } else {
-            self.data[x + y*SZ + z*SZ*SZ]
+            indexmap: vec![-1; sz*sz*sz],
         }
     }
 
     fn index_at(&self, x: i32, y: i32, z: i32) -> i32 {
-        if x >= 0 && y >= 0 && z >= 0 && x < ISZ && y < ISZ && z < ISZ {
-            let i = x + y*ISZ + z*ISZ*ISZ;
+        let sz = self.size;
+        if x >= 0 && y >= 0 && z >= 0 && x < sz && y < sz && z < sz {
+            let i = x + y*sz + z*sz*sz;
             self.indexmap[i as usize]
         } else { -1 }
     }
@@ -64,23 +48,27 @@ impl Chunk {
         self.index_at(x+off[0], y+off[1], z+off[2])
     }
 
-    fn create_vertex (&mut self, x: usize, y: usize, z: usize) {
+    fn create_vertex (&mut self, x: i32, y: i32, z: i32) {
         // How many voxels adjacent to this vertex are not empty
         let mut count = 0;
-        if self.get(x, y, z) { count+=1; }
-        if self.get(x, y, z+1) { count+=1; }
-        if self.get(x, y+1, z) { count+=1; }
-        if self.get(x, y+1, z+1) { count+=1; }
-        if self.get(x+1, y, z) { count+=1; }
-        if self.get(x+1, y, z+1) { count+=1; }
-        if self.get(x+1, y+1, z) { count+=1; }
-        if self.get(x+1, y+1, z+1) { count+=1; }
+        if self.source.get(x, y, z) { count+=1; }
+        if self.source.get(x, y, z+1) { count+=1; }
+        if self.source.get(x, y+1, z) { count+=1; }
+        if self.source.get(x, y+1, z+1) { count+=1; }
+        if self.source.get(x+1, y, z) { count+=1; }
+        if self.source.get(x+1, y, z+1) { count+=1; }
+        if self.source.get(x+1, y+1, z) { count+=1; }
+        if self.source.get(x+1, y+1, z+1) { count+=1; }
 
         // If not voxels are empty nor full,
         // then there's a vertex here.
         if count > 0 && count < 8 {
+            let ix = {
+                let sz = self.size;
+                (x + y*sz + z*sz*sz) as usize
+            };
             let index = self.positions.len();
-            self.indexmap[x + y*SZ + z*SZ*SZ] = index as i32;
+            self.indexmap[ix] = index as i32;
             self.positions.push( (x as i32, y as i32, z as i32) );
             self.vertices.push( Vector3::new(x as f32, y as f32, z as f32) );
         }
@@ -91,10 +79,6 @@ impl Chunk {
             x: i32, y: i32, z: i32,
             offs: [[i32; 3]; 4] ) {
 
-        fn get_ix(x: i32, y: i32, z: i32, off: [i32;3]) -> i32 {
-            x+off[0] + (y+off[1])*ISZ + (z+off[2])*ISZ*ISZ
-        }
-
         let mut vertices = 0;
         for off in offs.iter() {
             if self.index_at_off(x,y,z,*off) > -1 {
@@ -103,8 +87,9 @@ impl Chunk {
         }
 
         if vertices == 4 {
-            let pos = self.data[get_ix(x,y,z,[1,1,1]) as usize];
-            let neg = self.data[get_ix(x,y,z,offs[3]) as usize];
+            let pos = self.source.get(x+1, y+1, z+1);
+            let p = offs[3];
+            let neg = self.source.get(x+p[0], y+p[1], z+p[2]);
 
             if pos != neg {
                 let o = if neg {[0,1,2, 2,1,3]} else {[2,1,0, 3,1,2]};
@@ -150,39 +135,10 @@ impl Chunk {
         self.vertices[ix] = p/sum as f32;
     }
 
-    fn calculate_normals (&mut self) {
-        let len = self.positions.len();
-        self.normals = vec![Vector3::new(0.0, 0.0, 0.0); len];
-
-        let high = self.indices.len()/3-1;
-
-        for ii in 0 .. high {
-            let i = ii*3;
-
-            let aa = self.indices[i  ] as usize;
-            let bb = self.indices[i+1] as usize;
-            let cc = self.indices[i+2] as usize;
-
-            let a = self.vertices[aa];
-            let b = self.vertices[bb];
-            let c = self.vertices[cc];
-
-            let n = (b-a).cross(c-a);
-
-            self.normals[aa] += n;
-            self.normals[bb] += n;
-            self.normals[cc] += n;
-        }
-
-        for i in 0 .. len-1 {
-            self.normals[i] = self.normals[i].normalize();
-        }
-    }
-
-    pub fn create_mesh (&mut self) {
-        for x in 0..SZ {
-            for y in 0..SZ {
-                for z in 0..SZ {
+    fn mesh (&mut self) {
+        for x in 0 .. self.size {
+            for y in 0 .. self.size {
+                for z in 0 .. self.size {
                     self.create_vertex(x, y, z)
                 }
             }
@@ -191,13 +147,12 @@ impl Chunk {
         let len = self.positions.len();
         self.previous = vec![Vector3::new(0.0, 0.0, 0.0); len];
 
-        let relax_level = 10;
-
-        for _ in 0..relax_level {
+        for _ in 0 .. self.smooth {
+            // This is done so that previous has the current data and vertices
+            // trash, on which to write new vertices data
             match self {
-                &mut Chunk{ref mut previous, ref mut vertices, ..} =>
+                &mut Builder{ref mut previous, ref mut vertices, ..} =>
                     ::std::mem::swap(previous, vertices),
-                _ => {},
             }
 
             for i in 0..len {
@@ -206,9 +161,9 @@ impl Chunk {
             }
         }
 
-        for x in 0 .. ISZ-1 {
-            for y in 0 .. ISZ-1 {
-                for z in 0 .. ISZ-1 {
+        for x in 0 .. self.size-1 {
+            for y in 0 .. self.size-1 {
+                for z in 0 .. self.size-1 {
                     self.connect_faces(x, y, z, [
                         [0, 0, 0],
                         [0, 1, 0],
@@ -231,6 +186,18 @@ impl Chunk {
             }
         }
 
-        self.calculate_normals();
+        self.normals = calculate_normals(&self.vertices, &self.indices);
+    }
+}
+
+impl Mesher for SurfNet {
+    fn mesh (&mut self, source: &VoxelSource) ->
+        (Vec<Vector3<f32>>, Vec<Vector3<f32>>, Vec<u16>) {
+        let mut builder = Builder::new(self, source);
+        builder.mesh();
+        match builder {
+            Builder{vertices, normals, indices, .. } =>
+                (vertices, normals, indices)
+        }
     }
 }
