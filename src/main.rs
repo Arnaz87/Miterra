@@ -10,6 +10,7 @@ mod voxel_source;
 mod mesher;
 mod surfnet;
 mod blocky;
+mod marching_cubes;
 
 use camera::Camera;
 //use chunk::Chunk;
@@ -18,6 +19,8 @@ use voxel_source::SphereSource;
 use surfnet::SurfNet;
 use blocky::Blocky;
 use mesher::Mesher;
+
+use marching_cubes::MarchingCubes;
 
 use gfx::traits::FactoryExt;
 use gfx::Device;
@@ -110,7 +113,7 @@ pub fn main() {
     };
 
     let sphere = SphereSource{x: 32, y: -32, z: 32, r: 64};
-    let mut mesher: Option<Box<Mesher>> = Some(Box::new(Blocky{size: 64}));
+    let mut mesher: Option<Box<Mesher>> = Some(Box::new(MarchingCubes{size: 64}));
 
     let (vertex_buffer, mut slice) = factory.create_vertex_buffer_with_slice(&[], ());
     let transform_buffer = factory.create_constant_buffer(1);
@@ -159,8 +162,10 @@ pub fn main() {
         };
     }
 
-    println!("Press 1 to generate a blocky surface.");
-    println!("Press 2 to generate a surface net.");
+    println!("In the game screen:");
+    println!("- Press 1 to mine the craft.");
+    println!("- Press 2 to net the surface.");
+    println!("- Press 3 to march the cubes.");
 
     while running {
         use glutin::GlContext;
@@ -247,6 +252,7 @@ pub fn main() {
                         if active && pressed { match key {
                             Key::Key1 => mesher = Some(Box::new(Blocky{size: 64})),
                             Key::Key2 => mesher = Some(Box::new(SurfNet{size: 64, smooth: 3})),
+                            Key::Key3 => mesher = Some(Box::new(MarchingCubes{size: 64})),
                             _ => {}
                         } }
                     }

@@ -1,7 +1,7 @@
 
-use cgmath::{Vector3};
-use mesher::{Mesher};
 use voxel_source::VoxelSource;
+use cgmath::{Vector3};
+use mesher::Mesher;
 
 pub struct Blocky { pub size: i32 }
 
