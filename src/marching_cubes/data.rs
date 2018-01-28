@@ -27,6 +27,24 @@ pub const EDGE_DIRECTION: [[f32; 3]; 12] = [
     [0.0, 0.0, 1.0], [0.0, 0.0, 1.0], [ 0.0, 0.0, 1.0], [0.0,  0.0, 1.0]
 ];
 
+
+// Indices acroding to http://paulbourke.net/geometry/polygonise/
+//
+//           Edges                   Vertices / Voxels
+//
+//        _____4______                  ____________
+//       /|          /|                /4         5/|
+//    7 / |       5 / |               / |         / |
+//     /__|__6_____/  |              /__|_______ /  |
+//    |  8|       |   | 9           |6  |      7|   |
+//    |   |       |10 |             |   |       |   |
+// 11 |   |____0__|___|             |   |0______|__1|
+//    |  /        |  /              |  /        |  /
+//    | / 3       | / 1             | /         | /
+//    |/______2___|/                |3_________2|/
+// 
+//
+
 // For any edge, if one vertex is inside of the surface and the other is outside of the surface
 //  then the edge intersects the surface
 // For each of the 8 vertices of the cube can be two possible states : either inside or outside of the surface

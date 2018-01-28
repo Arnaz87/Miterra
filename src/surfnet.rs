@@ -193,8 +193,17 @@ impl<'a> Builder<'a> {
 impl Mesher for SurfNet {
     fn mesh (&mut self, source: &VoxelSource) ->
         (Vec<Vector3<f32>>, Vec<Vector3<f32>>, Vec<u16>) {
+
+        println!("Netting the surfs...");
+        let now = ::std::time::Instant::now();
+
         let mut builder = Builder::new(self, source);
         builder.mesh();
+
+        let tm = now.elapsed();
+        println!("The surf netted in {} ms",
+            (tm.as_secs()*1000) + (tm.subsec_nanos()/1_000_000) as u64);
+
         match builder {
             Builder{vertices, normals, indices, .. } =>
                 (vertices, normals, indices)

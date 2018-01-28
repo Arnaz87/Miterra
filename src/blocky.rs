@@ -1,6 +1,6 @@
 
 use voxel_source::VoxelSource;
-use cgmath::{Vector3};
+use cgmath::Vector3;
 use mesher::Mesher;
 
 pub struct Blocky { pub size: i32 }
@@ -99,8 +99,15 @@ impl Mesher for Blocky {
     fn mesh (&mut self, source: &VoxelSource) ->
         (Vec<Vector3<f32>>, Vec<Vector3<f32>>, Vec<u16>) {
 
+        println!("Mining the craft...");
+        let now = ::std::time::Instant::now();
+
         let mut builder = Builder::new(source, self.size);
         builder.mesh();
+
+        let tm = now.elapsed();
+        println!("The craft was mined in {} ms",
+            (tm.as_secs()*1000) + (tm.subsec_nanos()/1_000_000) as u64);
 
         (builder.vertices, builder.normals, builder.indices)
     }
