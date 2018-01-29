@@ -60,7 +60,7 @@ impl<'a> Builder<'a> {
         if self.source.get(x+1, y+1, z) { count+=1; }
         if self.source.get(x+1, y+1, z+1) { count+=1; }
 
-        // If not voxels are empty nor full,
+        // If voxels are not empty nor full,
         // then there's a vertex here.
         if count > 0 && count < 8 {
             let ix = {

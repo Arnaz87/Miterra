@@ -24,6 +24,7 @@ pub fn calculate_normals (verts: &Vec<Vector3<f32>>, indices: &Vec<u16>) -> Vec<
     let b = verts[bb];
     let c = verts[cc];
 
+    // To get a weighted sum, do not normalize this
     let n = (b-a).cross(c-a);
 
     normals[aa] += n;

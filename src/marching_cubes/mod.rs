@@ -7,7 +7,7 @@ use voxel_source::VoxelSource;
 
 use self::data::*;
 
-pub struct MarchingCubes { pub size: i32 }
+pub struct MarchingCubes { pub size: i32, pub smooth: bool }
 
 pub struct Builder<'a> {
     size: i32,
@@ -17,6 +17,15 @@ pub struct Builder<'a> {
 
     vertices: Vec<Vector3<f32>>,
     indices: Vec<u16>,
+
+    // Vertex caches, inspired on:
+    // http://alphanew.net/index.php?section=articles&site=marchoptim&lang=eng
+    ybuf: Vec<u16>,
+    xbuf: Vec<u16>,
+    zbuf: Vec<u16>,
+    ybuf_next: Vec<u16>,
+    xbuf_top: Vec<u16>,
+    zbuf_top: Vec<u16>,
 }
 
 fn get_offset (v1: f32, v2: f32) -> f32 {
@@ -33,14 +42,18 @@ impl<'a> Builder<'a> {
             voxel_normals: vec![],
             vertices: vec![],
             indices: vec![],
+
+            ybuf: vec![],
+            xbuf: vec![],
+            zbuf: vec![],
+            ybuf_next: vec![],
+            xbuf_top: vec![],
+            zbuf_top: vec![],
         }
     }
 
     fn get(&self, x: i32, y: i32, z: i32) -> f32 {
         let s = self.size + 5;
-        if x >= s { panic!("x is out of bounds: {} > {}", x, s); }
-        if y >= s { panic!("y is out of bounds: {} > {}", y, s); }
-        if z >= s { panic!("z is out of bounds: {} > {}", z, s); }
         self.voxels[(x + y*s + z*s*s) as usize]
     }
     
@@ -72,8 +85,8 @@ impl<'a> Builder<'a> {
 
         // Blur X
         for x in 0 .. size {
-            for y in 0 .. size {
-                for z in 0 .. size {
+            for y in 0 .. s {
+                for z in 0 .. s {
                     let mut sum = 0.0;
                     for i in 0..5 {
                         sum += self.get(x+i, y, z);
@@ -86,7 +99,7 @@ impl<'a> Builder<'a> {
         // Blur Y
         for x in 0 .. size {
             for y in 0 .. size {
-                for z in 0 .. size {
+                for z in 0 .. s {
                     let mut sum = 0.0;
                     for i in 0..5 {
                         sum += self.get(x, y+i, z);
@@ -129,9 +142,10 @@ impl<'a> Builder<'a> {
                     // actual center of the voxel is 3 voxels ahead, so the
                     // neighbors are not -1 and +1, but +1 and +3
                     // TODO: Correct that
-                    let dx = self.get(x+3,y,z) - self.get(x+1,y,z);
-                    let dy = self.get(x,y+3,z) - self.get(x,y+1,z);
-                    let dz = self.get(x,y,z+3) - self.get(x,y,z+1);
+                    // TODO: What I said above doesn't work (?)
+                    let dx = self.get(x+2,y,z) - self.get(x+0,y,z);
+                    let dy = self.get(x,y+2,z) - self.get(x,y+0,z);
+                    let dz = self.get(x,y,z+2) - self.get(x,y,z+0);
 
                     let vec = -Vector3::new(dx, dy, dz).normalize();
 
@@ -162,10 +176,44 @@ impl<'a> Builder<'a> {
         (z0 * (1.0-fy) + z1 * fy).normalize()
     }
 
+    fn create_vertex (&mut self, pos: [f32; 3], cube: [f32; 8], a: usize, b: usize) -> u16 {
+        let voff = VERTEX_OFFSET[a];
+        let voffb = VERTEX_OFFSET[b];
+
+        let direction = [
+            voffb[0] as f32 - voff[0] as f32,
+            voffb[1] as f32 - voff[1] as f32,
+            voffb[2] as f32 - voff[2] as f32
+        ];
+
+        let offset = get_offset(cube[a], cube[b]);
+
+        let mut edge_vertex = Vector3::new(0.0, 0.0, 0.0);
+        edge_vertex.x = pos[0] + voff[0] as f32 + offset * direction[0] as f32;
+        edge_vertex.y = pos[1] + voff[1] as f32 + offset * direction[1] as f32;
+        edge_vertex.z = pos[2] + voff[2] as f32 + offset * direction[2] as f32;
+
+        let index = self.vertices.len();
+        self.vertices.push(edge_vertex);
+        index as u16
+    }
+
     fn cube(&mut self, pos: [f32; 3], cube: [f32; 8]) {
+        // Indices acording to http://paulbourke.net/geometry/polygonise/
+        //           Edges                   Vertices / Voxels
+        //
+        //        _____4______                  ____________
+        //       /|          /|                /4         5/|
+        //    7 / |       5 / |               / |         / |
+        //     /__|__6_____/  |              /__|_______ /  |
+        //    |  8|       |   | 9           |7  |      6|   |
+        //    |   |       |10 |             |   |       |   |
+        // 11 |   |____0__|___|             |   |0______|__1|
+        //    |  /        |  /              |  /        |  /
+        //    | / 3       | / 1             | /         | /
+        //    |/______2___|/                |3_________2|/
+
         let mut flag_index = 0;
-        
-        let mut edge_vertex = [Vector3::new(0.0, 0.0, 0.0); 12];
     
         //Find which vertices are inside of the surface and which are outside
         for i in 0 .. 8 {
@@ -179,43 +227,147 @@ impl<'a> Builder<'a> {
     
         //If the cube is entirely inside or outside of the surface, then there will be no intersections
         if edge_flags == 0 { return; }
+        
+        let mut edge_vertex_indices = [0; 12];
+
+        fn bit (x: i32, n: usize) -> bool { x&(1<<n) != 0 }
+
+        macro_rules! edge {
+            ($i:expr, $value:expr) => {
+                if bit(edge_flags, $i) {
+                    edge_vertex_indices[$i] = $value;
+                }
+            }
+        }
+
+        let x = pos[0] as usize;
+        let z = pos[2] as usize;
+        let s = self.size as usize + 1;
+
+        // Bottom edges. Don't exist at the bottom plane.
+        if pos[1] == 0.0 {
+            // TODO: Cubes should also share bottom edges
+            edge!(0, self.create_vertex(pos, cube, 0, 1));
+            edge!(1, self.create_vertex(pos, cube, 1, 2));
+            edge!(2, self.create_vertex(pos, cube, 2, 3));
+            edge!(3, self.create_vertex(pos, cube, 3, 0));
+        } else {
+            edge!(0, self.xbuf[x + z*s]);
+            edge!(1, self.zbuf[x+1 + z*s]);
+            edge!(2, self.xbuf[x + (z+1)*s]);
+            edge!(3, self.zbuf[x + z*s]);
+        }
+
+
+        edge!(4,
+            if pos[2] == 0.0 {
+                let index = self.create_vertex(pos, cube, 4, 5);
+                self.xbuf_top[x + z*s] = index;
+                index
+            } else { self.xbuf_top[x + z*s] }
+        );
+        edge!(5, {
+            let index = self.create_vertex(pos, cube, 5, 6);
+            self.zbuf_top[x+1 + z*s] = index;
+            index
+        });
+        edge!(6, {
+            let index = self.create_vertex(pos, cube, 6, 7);
+            self.xbuf_top[x + (z+1)*s] = index;
+            index
+        });
+        edge!(7, {
+            if pos[0] == 0.0 {
+                let index = self.create_vertex(pos, cube, 7, 4);
+                self.zbuf_top[x + z*s] = index;
+                index
+            } else { self.zbuf_top[x + z*s] }
+        });
+
+
+        edge!(8,
+            if z == 0 && x == 0 {
+                self.create_vertex(pos, cube, 0, 4)
+            } else { self.ybuf[x] }
+        );
+        edge!(9,
+            if z == 0 {
+                let index = self.create_vertex(pos, cube, 1, 5);
+                self.ybuf[x+1] = index;
+                index
+            } else { self.ybuf[x+1] }
+        );
+
+        edge!(10, {
+            let index = self.create_vertex(pos, cube, 2, 6);
+            self.ybuf_next[x+1] = index;
+            index
+        });
+        edge!(11, {
+            if x == 0 {
+                let index = self.create_vertex(pos, cube, 3, 7);
+                self.ybuf_next[x] = index;
+                index
+            } else { self.ybuf_next[x] }
+        });
     
-        //Find the point of intersection of the surface with each edge
-        for i in 0 .. 12 {
+        //Find the point of intersection of the surface with each edge, WAAY simpler without buffers.
+        /*for i in 0 .. 12 {
+
             //if there is an intersection on this edge
-            if edge_flags & (1<<i) != 0 {
+            if bit(edge_flags, i) {
                 let connection = EDGE_CONNECTION[i];
                 let direction = EDGE_DIRECTION[i];
 
                 let offset = get_offset(cube[connection[0]], cube[connection[1]]);
-    
-                edge_vertex[i].x = pos[0] + VERTEX_OFFSET[connection[0]][0] as f32 + offset * direction[0] as f32;
-                edge_vertex[i].y = pos[1] + VERTEX_OFFSET[connection[0]][1] as f32 + offset * direction[1] as f32;
-                edge_vertex[i].z = pos[2] + VERTEX_OFFSET[connection[0]][2] as f32 + offset * direction[2] as f32;
+                let voff = VERTEX_OFFSET[connection[0]];
+
+                let index = self.create_vertex(pos, cube, connection[0], connection[1]);
+                edge_vertex_indices[i] = index;
             }
-        }
+        }*/
     
         //Save the triangles that were found. There can be up to five per cube
 
         let connection_table = TRIANGLE_CONNECTION_TABLE[flag_index];
 
         for i in 0..5 {
-            if connection_table[3*i] < 0 { break; }
-            
-            let idx = self.vertices.len();
+            if connection_table[3*i] == 12 { break; }
 
             for j in 0..3 {
-                let vert = connection_table[3*i+j] as usize;
-                self.indices.push((idx + WINDING_ORDER[j]) as u16);
-                self.vertices.push(edge_vertex[vert]);
+                let ix = 3*i + WINDING_ORDER[j];
+                let vert = connection_table[ix];
+                self.indices.push(edge_vertex_indices[vert]);
             }
         }
     }
 
     fn mesh (&mut self) {
-        for x in 0 .. self.size {
-            for y in 0 .. self.size {
-                for z in 0 .. self.size {
+
+        let line_size = (self.size + 1) as usize;
+        let plane_size = line_size * line_size;
+
+        self.ybuf = vec![0; line_size];
+        self.xbuf = vec![0; plane_size];
+        self.zbuf = vec![0; plane_size];
+        self.ybuf_next = vec![0; line_size];
+        self.xbuf_top = vec![0; plane_size];
+        self.zbuf_top = vec![0; plane_size];
+
+        // Go in horizontal layers. y points up.
+        for y in 0 .. self.size {
+
+            // In each plane, move the top cache to the bottom
+            ::std::mem::swap(&mut self.xbuf, &mut self.xbuf_top);
+            ::std::mem::swap(&mut self.zbuf, &mut self.zbuf_top);
+
+            // z points backwards
+            for z in 0 .. self.size {
+
+                ::std::mem::swap(&mut self.ybuf, &mut self.ybuf_next);
+
+                // x aligned lines, pointing right
+                for x in 0 .. self.size {
                     let mut cube = [0.0; 8];
                     for i in 0 .. 8 {
                         cube[i] = self.get(
@@ -241,10 +393,12 @@ impl Mesher for MarchingCubes {
 
         let mut builder = Builder::new(source, self.size);
         builder.fill_voxels();
-        builder.blur();
+        if self.smooth {
+            builder.blur();
 
-        // Comment this line for facets shading
-        builder.calculate_voxel_normals();
+            // Comment this line for default normal calculation
+            builder.calculate_voxel_normals();
+        }
 
         builder.mesh();
 

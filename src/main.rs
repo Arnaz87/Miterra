@@ -113,7 +113,7 @@ pub fn main() {
     };
 
     let sphere = SphereSource{x: 32, y: -32, z: 32, r: 64};
-    let mut mesher: Option<Box<Mesher>> = Some(Box::new(MarchingCubes{size: 64}));
+    let mut mesher: Option<Box<Mesher>> = Some(Box::new(MarchingCubes{size: 64, smooth: true}));
 
     let (vertex_buffer, mut slice) = factory.create_vertex_buffer_with_slice(&[], ());
     let transform_buffer = factory.create_constant_buffer(1);
@@ -251,8 +251,8 @@ pub fn main() {
 
                         if active && pressed { match key {
                             Key::Key1 => mesher = Some(Box::new(Blocky{size: 64})),
-                            Key::Key2 => mesher = Some(Box::new(SurfNet{size: 64, smooth: 3})),
-                            Key::Key3 => mesher = Some(Box::new(MarchingCubes{size: 64})),
+                            Key::Key2 => mesher = Some(Box::new(SurfNet{size: 64, smooth: 7})), // smooth 7 is best
+                            Key::Key3 => mesher = Some(Box::new(MarchingCubes{size: 64, smooth: true})),
                             _ => {}
                         } }
                     }
