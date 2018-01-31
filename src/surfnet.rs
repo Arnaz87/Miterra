@@ -2,6 +2,7 @@
 use mesher::{Mesher, calculate_normals};
 use voxel_source::VoxelSource;
 use cgmath::Vector3;
+use mesh::{Mesh, Vertex};
 
 pub struct SurfNet {
     pub size: u16,
@@ -13,10 +14,9 @@ pub struct Builder<'a> {
     smooth: u16,
     source: &'a VoxelSource,
     positions: Vec<(i32, i32, i32)>,
-    previous: Vec<Vector3<f32>>,
     vertices: Vec<Vector3<f32>>,
-    normals: Vec<Vector3<f32>>,
-    indices: Vec<u16>,
+    previous: Vec<Vector3<f32>>,
+    mesh: Mesh,
     indexmap: Vec<i32>,
 }
 
@@ -30,8 +30,7 @@ impl<'a> Builder<'a> {
             positions: vec![],
             previous: vec![],
             vertices: vec![],
-            normals: vec![],
-            indices: vec![],
+            mesh: Mesh::new(),
             indexmap: vec![-1; sz*sz*sz],
         }
     }
@@ -100,13 +99,13 @@ impl<'a> Builder<'a> {
                     ix[i] = self.index_at_off(x,y,z,offs[ii]) as u16;
                 }
 
-                self.indices.push(ix[0]);
-                self.indices.push(ix[1]);
-                self.indices.push(ix[2]);
+                self.mesh.indices.push(ix[0]);
+                self.mesh.indices.push(ix[1]);
+                self.mesh.indices.push(ix[2]);
 
-                self.indices.push(ix[3]);
-                self.indices.push(ix[4]);
-                self.indices.push(ix[5]);
+                self.mesh.indices.push(ix[3]);
+                self.mesh.indices.push(ix[4]);
+                self.mesh.indices.push(ix[5]);
             }
         }
     }
@@ -135,7 +134,7 @@ impl<'a> Builder<'a> {
         self.vertices[ix] = p/sum as f32;
     }
 
-    fn mesh (&mut self) {
+    fn build (&mut self) {
         for x in 0 .. self.size {
             for y in 0 .. self.size {
                 for z in 0 .. self.size {
@@ -160,6 +159,15 @@ impl<'a> Builder<'a> {
                 self.relax(x, y, z);
             }
         }
+
+        match self {
+            &mut Builder{ref mut mesh, ref mut vertices, ..} => {
+                mesh.vertices = vertices.iter().map(
+                    |pos| Vertex::from_pos(*pos)
+                ).collect()
+            }
+        }
+
 
         for x in 0 .. self.size-1 {
             for y in 0 .. self.size-1 {
@@ -186,27 +194,23 @@ impl<'a> Builder<'a> {
             }
         }
 
-        self.normals = calculate_normals(&self.vertices, &self.indices);
+        calculate_normals(&mut self.mesh);
     }
 }
 
 impl Mesher for SurfNet {
-    fn mesh (&mut self, source: &VoxelSource) ->
-        (Vec<Vector3<f32>>, Vec<Vector3<f32>>, Vec<u16>) {
+    fn mesh (&mut self, source: &VoxelSource) -> Mesh {
 
         println!("Netting the surfs...");
         let now = ::std::time::Instant::now();
 
         let mut builder = Builder::new(self, source);
-        builder.mesh();
+        builder.build();
 
         let tm = now.elapsed();
         println!("The surf netted in {} ms",
             (tm.as_secs()*1000) + (tm.subsec_nanos()/1_000_000) as u64);
 
-        match builder {
-            Builder{vertices, normals, indices, .. } =>
-                (vertices, normals, indices)
-        }
+        builder.mesh
     }
 }

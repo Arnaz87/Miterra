@@ -4,6 +4,7 @@ mod data;
 use mesher::{Mesher, calculate_normals};
 use cgmath::{Vector3, InnerSpace};
 use voxel_source::VoxelSource;
+use mesh::{Mesh, Vertex};
 
 use self::data::*;
 
@@ -385,8 +386,7 @@ impl<'a> Builder<'a> {
 }
 
 impl Mesher for MarchingCubes {
-    fn mesh (&mut self, source: &VoxelSource) ->
-        (Vec<Vector3<f32>>, Vec<Vector3<f32>>, Vec<u16>) {
+    fn mesh (&mut self, source: &VoxelSource) -> Mesh {
 
         println!("Marching the cubes...");
         let now = ::std::time::Instant::now();
@@ -402,27 +402,30 @@ impl Mesher for MarchingCubes {
 
         builder.mesh();
 
-        let normals = if builder.voxel_normals.len() > 0 {
-            let mut normals = vec![Vector3::new(0.0, 0.0, 0.0); builder.vertices.len()];
-            
+        let vertices = builder.vertices.iter().map(|pos| Vertex::from_pos(*pos)).collect();
+        let indices = ::std::mem::replace(&mut builder.indices, vec![]);
+        let mut mesh = Mesh { indices: indices, vertices: vertices };
+
+
+        if builder.voxel_normals.len() > 0 {
             //Each verts in the mesh generated is its position in the voxel array
             //and you can use this to find what the normal at this position.
             //The verts are not at whole numbers though so you need to use trilinear interpolation
             //to find the normal for that position
             
-            for i in 0 .. normals.len() {
-                normals[i] = builder.interpolate_normal(builder.vertices[i]);
+            for i in 0 .. mesh.vertices.len() {
+                let mut vertex = &mut mesh.vertices[i];
+                let normal = builder.interpolate_normal(vertex.pos);
+                vertex.normal = normal;
             }
-
-            normals
         } else {
-            calculate_normals(&builder.vertices, &builder.indices)
-        };
+            calculate_normals(&mut mesh);
+        }
 
         let tm = now.elapsed();
         println!("The cubes marched in {} ms",
             (tm.as_secs()*1000) + (tm.subsec_nanos()/1_000_000) as u64);
 
-        (builder.vertices, normals, builder.indices)
+        mesh
     }
 }

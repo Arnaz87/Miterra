@@ -5,15 +5,14 @@ extern crate glutin;
 extern crate cgmath;
 
 mod camera;
-//mod chunk;
 mod voxel_source;
 mod mesher;
 mod surfnet;
 mod blocky;
 mod marching_cubes;
+mod mesh;
 
 use camera::Camera;
-//use chunk::Chunk;
 
 use voxel_source::SphereSource;
 use surfnet::SurfNet;
@@ -263,16 +262,19 @@ pub fn main() {
 
         match std::mem::replace(&mut mesher, None) {
             Some(mut mesher) => {
-                let (vs, ns, is) = mesher.mesh(&sphere);
-                let indices: &[u16] = is.as_ref();
+                let mesh = mesher.mesh(&sphere);
 
-                let vertices: Vec<Vertex> = vs.iter().zip(ns.iter()).map( |(p, n)|
+                let vertices: Vec<Vertex> = mesh.vertices.iter().map( |vertex|
                     Vertex {
-                        pos: *p.as_ref(),
+                        pos: *vertex.pos.as_ref(),
                         color: [1.0, 1.0, 1.0],
-                        normal: *n.as_ref()
+                        normal: *vertex.normal.as_ref()
                     }
                 ).collect();
+
+                // ¿¿¿??? I don't understand why can't I simply pass
+                // &mesh.indices to create_vertex_buffer_with_slize
+                let indices: &[u16] = mesh.indices.as_ref();
 
                 let (vbuf, sl) = factory.create_vertex_buffer_with_slice(
                     &vertices, indices

@@ -1,39 +1,44 @@
 
-use cgmath::{Vector3, InnerSpace};
 use voxel_source::VoxelSource;
+use mesh::Mesh;
 
 pub trait Mesher {
-  fn mesh (&mut self, source: &VoxelSource) ->
-    (Vec<Vector3<f32>>, Vec<Vector3<f32>>, Vec<u16>);
+  fn mesh (&mut self, source: &VoxelSource) -> Mesh;
 }
 
-pub fn calculate_normals (verts: &Vec<Vector3<f32>>, indices: &Vec<u16>) -> Vec<Vector3<f32>> {
-  let len = verts.len();
-  let mut normals = vec![Vector3::new(0.0, 0.0, 0.0); len];
+pub fn calculate_normals (mesh: &mut Mesh) {
+  use mesh::{Vector3, InnerSpace};
 
-  let high = indices.len()/3-1;
+  let len = mesh.vertices.len();
+
+  let high = mesh.indices.len()/3-1;
+
+  // Reset all normals
+  for vertex in mesh.vertices.iter_mut() {
+    vertex.normal = Vector3::new(0.0, 0.0, 0.0);
+  }
 
   for ii in 0 .. high {
     let i = ii*3;
 
-    let aa = indices[i  ] as usize;
-    let bb = indices[i+1] as usize;
-    let cc = indices[i+2] as usize;
+    let aa = mesh.indices[i  ] as usize;
+    let bb = mesh.indices[i+1] as usize;
+    let cc = mesh.indices[i+2] as usize;
 
-    let a = verts[aa];
-    let b = verts[bb];
-    let c = verts[cc];
+    let a = mesh.vertices[aa].pos;
+    let b = mesh.vertices[bb].pos;
+    let c = mesh.vertices[cc].pos;
 
     // To get a weighted sum, do not normalize this
     let n = (b-a).cross(c-a);
 
-    normals[aa] += n;
-    normals[bb] += n;
-    normals[cc] += n;
+    mesh.vertices[aa].normal += n;
+    mesh.vertices[bb].normal += n;
+    mesh.vertices[cc].normal += n;
   }
 
-  for i in 0 .. len {
-    normals[i] = normals[i].normalize();
+  // Normalize all normals
+  for vertex in mesh.vertices.iter_mut() {
+    vertex.normal = vertex.normal.normalize();
   }
-  normals
 }
