@@ -9,8 +9,6 @@ pub trait Mesher {
 pub fn calculate_normals (mesh: &mut Mesh) {
   use mesh::{Vector3, InnerSpace};
 
-  let len = mesh.vertices.len();
-
   let high = mesh.indices.len()/3-1;
 
   // Reset all normals

@@ -29,4 +29,11 @@ pub struct Mesh {
 
 impl Mesh {
   pub fn new() -> Self { Mesh { vertices: vec![], indices: vec![] } }
+
+  pub fn translate(&mut self, p: Vector3) {
+    for vertex in self.vertices.iter_mut() {
+      let old = vertex.pos;
+      vertex.pos = old + p;
+    }
+  }
 }

@@ -97,15 +97,17 @@ impl<'a> Builder<'a> {
 impl Mesher for Blocky {
     fn mesh (&mut self, source: &VoxelSource) -> Mesh {
 
-        println!("Mining the craft...");
+        //println!("Mining the craft...");
         let now = ::std::time::Instant::now();
 
         let mut builder = Builder::new(source, self.size);
         builder.build();
 
         let tm = now.elapsed();
-        println!("The craft was mined in {} ms",
-            (tm.as_secs()*1000) + (tm.subsec_nanos()/1_000_000) as u64);
+        println!("The craft was mined in {} ms, with {} vertices",
+            (tm.as_secs()*1000) + (tm.subsec_nanos()/1_000_000) as u64,
+            builder.mesh.vertices.len()
+        );
 
         builder.mesh
     }

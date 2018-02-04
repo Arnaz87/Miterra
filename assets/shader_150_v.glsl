@@ -1,7 +1,8 @@
 #version 150 core
 
-uniform Transform {
-    mat4 u_Transform;
+uniform World {
+    mat4 u_View;
+    vec3 u_LightDir;
 };
 
 in vec3 a_Pos;
@@ -13,5 +14,5 @@ out vec3 v_Normal;
 void main() {
     v_Color = a_Color;
     v_Normal = a_Normal;
-    gl_Position = u_Transform * vec4(a_Pos, 1.0);
+    gl_Position = u_View * vec4(a_Pos, 1.0);
 }

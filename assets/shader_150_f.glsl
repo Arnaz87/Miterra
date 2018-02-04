@@ -1,6 +1,7 @@
 #version 150 core
 
-uniform Light {
+uniform World {
+    mat4 u_View;
     vec3 u_LightDir;
 };
 
