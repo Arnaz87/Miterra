@@ -18,3 +18,18 @@ impl VoxelSource for SphereSource {
     return d2 < r2;
   }
 }
+
+pub struct SineSource {
+  pub amplitude: f32,
+  pub magnitude: f32,
+  pub bias: f32,
+}
+
+impl VoxelSource for SineSource {
+  fn get(&self, x: i32, y: i32, z: i32) -> bool {
+    let xv = (x as f32*self.amplitude).cos();
+    let zv = (z as f32*self.amplitude).cos();
+    let v = xv*zv*self.magnitude + self.bias;
+    return y < v as i32;
+  }
+}

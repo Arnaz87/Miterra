@@ -18,7 +18,7 @@ mod base;
 use base::Base;
 use camera::Camera;
 
-use voxel_source::SphereSource;
+use voxel_source::SineSource;
 use surfnet::SurfNet;
 use blocky::Blocky;
 use mesher::Mesher;
@@ -40,12 +40,13 @@ pub fn main() {
 
     let mut base = Base::new("MiTerra", 500, 500);
 
-    let mut chunks = ChunkManager::new(
-        SphereSource{x: 32, y: -64, z: 32, r: 96},
-        //Blocky{size: 64},
-        MarchingCubes{size: 64, smooth: true},
-        //SurfNet{size: 64, smooth: 6},
-    );
+    let source = SineSource{amplitude: 0.04, magnitude: 10.0, bias: 15.0};
+    //let source = SphereSource{x: 32, y: -64, z: 32, r: 96};
+
+    //let mesher = Blocky{size: 64};
+    let mesher = MarchingCubes{size: 64, smooth: true};
+
+    let mut chunks = ChunkManager::new(source, mesher);
 
     chunks.generate(0, 0, 0);
     chunks.generate(0, 0, 64);
@@ -162,7 +163,7 @@ pub fn main() {
                 } });
             }
         }
-        
+
         chunks.update(&mut base);
 
         cam.update();
