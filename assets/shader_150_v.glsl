@@ -6,13 +6,18 @@ uniform World {
 };
 
 in vec3 a_Pos;
-in vec3 a_Color;
 in vec3 a_Normal;
-out vec3 v_Color;
-out vec3 v_Normal;
+in int a_Material;
+
+out VertexData {
+    vec3 normal;
+    vec3 pos;
+    int material;
+} VertexOut;
 
 void main() {
-    v_Color = a_Color;
-    v_Normal = a_Normal;
     gl_Position = u_View * vec4(a_Pos, 1.0);
+    VertexOut.normal = a_Normal;
+    VertexOut.pos = a_Pos;
+    VertexOut.material = a_Material;
 }

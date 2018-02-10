@@ -36,4 +36,11 @@ impl Mesh {
       vertex.pos = old + p;
     }
   }
+
+  pub fn scale(&mut self, s: f32) {
+    for vertex in self.vertices.iter_mut() {
+      let old = vertex.pos;
+      vertex.pos = old * s;
+    }
+  }
 }

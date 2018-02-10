@@ -70,7 +70,8 @@ impl<'a> Builder<'a> {
         for x in 0 .. s {
             for y in 0 .. s {
                 for z in 0 .. s {
-                    let vox = self.source.get(x, y, z);
+                    // -2 to account for the bluring
+                    let vox = self.source.get(x-2, y-2, z-2);
                     let v = if vox {1.0} else {-1.0};
                     self.voxels[(x + y*s + z*s*s) as usize] = v;
                 }

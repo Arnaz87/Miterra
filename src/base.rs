@@ -3,13 +3,15 @@ use gfx;
 use glutin;
 
 pub use gfx::traits::FactoryExt;
-use gfx::Device;
+use gfx::{Device, handle};
 use gfx_window_glutin as gfx_glutin;
 use gfx_device_gl as backend;
 use self::backend::Resources;
 use glutin::GlContext;
 
-// Esto debería ser Srgba8, todo el mundo usa eso, pero glutin da un error.
+// Esto debería ser Srgba8, pero glutin da un error.
+// Con srgb, se aplica automáticamente correción gamma (tengo entendido).
+// https://www.khronos.org/opengl/wiki/Image_Format#sRGB_colorspace
 pub type ColorFormat = gfx::format::Rgba8;
 pub type DepthFormat = gfx::format::DepthStencil;
 
@@ -17,7 +19,7 @@ gfx_defines! {
     vertex Vertex {
         pos: [f32; 3] = "a_Pos",
         normal: [f32; 3] = "a_Normal",
-        color: [f32; 3] = "a_Color",
+        material: i32 = "a_Material",
     }
 
     constant World {
@@ -29,14 +31,19 @@ gfx_defines! {
         vbuf: gfx::VertexBuffer<Vertex> = (),
         world: gfx::ConstantBuffer<World> = "World",
         out_color: gfx::RenderTarget<ColorFormat> = "FragColor",
+        grass: gfx::TextureSampler<[f32; 4]> = "t_Grass",
+        soilsand: gfx::TextureSampler<[f32; 4]> = "t_SoilSand",
         out_depth: gfx::DepthTarget<DepthFormat> =
             gfx::preset::depth::LESS_EQUAL_WRITE,
     }
 }
 
 pub type Slice = gfx::Slice<Resources>;
-pub type VertexBuffer = gfx::handle::Buffer<Resources, Vertex>;
-pub type WorldBuffer = gfx::handle::Buffer<Resources, World>;
+pub type Texture = handle::ShaderResourceView<Resources, [f32; 4]>;
+
+pub type VertexBuffer = handle::Buffer<Resources, Vertex>;
+pub type WorldBuffer = handle::Buffer<Resources, World>;
+pub type Sampler = handle::Sampler<Resources>;
 
 const BLACK: [f32; 4] = [0.0, 0.0, 0.0, 1.0];
 
@@ -48,12 +55,14 @@ pub struct Base {
     pub event_loop: glutin::EventsLoop,
     pub window: glutin::GlWindow,
 
-    pub out_color: gfx::handle::RenderTargetView<Resources, ColorFormat>,
-    pub out_depth: gfx::handle::DepthStencilView<Resources, DepthFormat>,
+    pub out_color: handle::RenderTargetView<Resources, ColorFormat>,
+    pub out_depth: handle::DepthStencilView<Resources, DepthFormat>,
 
     pub terrain_pso: gfx::PipelineState<Resources, terrain_pipe::Meta>,
 
     pub world_buffer: WorldBuffer,
+
+    pub sampler: handle::Sampler<Resources>,
 }
 
 impl Base {
@@ -72,18 +81,21 @@ impl Base {
 
         let pso = {
             let vs = include_bytes!("../assets/shader_150_v.glsl");
+            let gs = include_bytes!("../assets/shader_150_g.glsl");
             let ps = include_bytes!("../assets/shader_150_f.glsl");
+            let shader_set = factory.create_shader_set_geometry(vs, gs, ps).unwrap();
+
             let init = terrain_pipe::new();
 
             // PointList, TriangleList
             let prim = gfx::Primitive::TriangleList;
             let raster = gfx::state::Rasterizer::new_fill().with_cull_back();
 
-            let set = factory.create_shader_set(vs, ps).unwrap();
-            factory.create_pipeline_state(&set, prim, raster, init).unwrap()
+            factory.create_pipeline_state(&shader_set, prim, raster, init).unwrap()
         };
 
         let w_buff = factory.create_constant_buffer(1);
+        let sampler = factory.create_sampler_linear();
 
         Base {
             device: device,
@@ -98,6 +110,8 @@ impl Base {
 
             out_color: rtv,
             out_depth: stv,
+
+            sampler: sampler,
         }
     }
 
@@ -117,5 +131,16 @@ impl Base {
     pub fn update_world (&mut self, w: World) {
         let &mut Base {ref mut encoder, ref mut world_buffer, ..} = self;
         encoder.update_buffer(&world_buffer, &[w], 0).unwrap();
+    }
+
+    pub fn load_texture (&mut self, path: &str) -> Texture {
+        use gfx::Factory;
+        let img = ::image::open(path).unwrap().to_rgba();
+        let (width, height) = img.dimensions();
+        let kind = gfx::texture::Kind::D2(width as u16, height as u16, gfx::texture::AaMode::Single);
+        let mipmap = gfx::texture::Mipmap::Allocated;
+        let (_, view) = self.factory.create_texture_immutable_u8::<ColorFormat>(kind, mipmap, &[&img]).unwrap();
+        self.encoder.generate_mipmap(&view);
+        view
     }
 }
